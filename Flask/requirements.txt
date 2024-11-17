@@ -3,3 +3,4 @@ flask_restx
 pymongo
 python-dotenv
 pymysql
+jwt
