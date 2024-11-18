@@ -1,5 +1,4 @@
-from ..app import get_db_connection
-from ..app import get_cursor
+from .connection import get_db_connection, get_cursor
 
 def get_user_certifications_mysql(user_id):
     """
@@ -20,3 +19,4 @@ def get_user_certifications_mysql(user_id):
     user_certification = [cert[0] for cert in user_certification]
 
     return user_certification
+
