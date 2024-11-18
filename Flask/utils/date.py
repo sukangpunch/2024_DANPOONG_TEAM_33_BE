@@ -10,10 +10,13 @@ def add_d_day_to_companies(company_list):
     Returns:
         list: D-day 값이 추가된 회사 데이터 리스트.
     """
+    # 포멧 변경 후 D-day 계산
+    company_list = serialize_company_list(company_list)
+
     for company in company_list:
-        end_date = company["hiring_period"].get("end_date")
+        end_date = company['hiringPeriodEndDate']
         if end_date:
-            company["hiring_period"]["D-day"] = calculate_d_day(end_date)
+            company["hiringPeriodDday"] = calculate_d_day(end_date)
     return company_list
 
 def calculate_d_day(date_str):
@@ -26,7 +29,7 @@ def calculate_d_day(date_str):
     Returns:
         int: 오늘 기준으로 몇 일 뒤인지 (양수: 미래, 음수: 과거, 0: 오늘).
     """
-    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    target_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%f").date()
     today = datetime.now().date()
     d_day = (target_date - today).days
     return d_day
@@ -35,10 +38,11 @@ def serialize_company_list(company_list):
 
     for company in company_list:
         # 날짜를 문자열로 변환
-        if 'hiring_period' in company and 'end_date' in company['hiring_period']:
-            company['hiring_period']['end_date'] = company['hiring_period']['end_date'].isoformat()
-        elif 'hiring_period' in company and 'start_date' in company['hiring_period']:
-            company['hiring_period']['start_date'] = company['hiring_period']['start_date'].isoformat()
+        if 'hiringPeriodEndDate' in company:
+            company['hiringPeriodEndDate'] = company['hiringPeriodEndDate'].isoformat()
+
+        elif 'hiringPeriodStartDate' in company:
+            company['hiringPeriodStartDate'] = company['hiringPeriodStartDate'].isoformat()
 
     return company_list
 

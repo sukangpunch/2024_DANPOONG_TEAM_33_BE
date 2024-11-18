@@ -16,11 +16,10 @@ JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
 # Utis 함수
 
 from utils.jwt import decode_token
-from utils.user import user_certifications_classification
-from utils.date import add_d_day_to_companies
-from utils.simplify import simplify_certifications_to_list
+from utils.user import user_certifications_classification_by_essential
+from utils.simplify import simplify_certifications_to_list_names
 from utils.mysql.user import get_user_certifications_mysql
-from utils.date import serialize_company_list
+from utils.date import add_d_day_to_companies, serialize_company_list
 ########################################################################################################################################################################################################################    
 # MySQL 연결
 
@@ -34,6 +33,7 @@ MONGODB_DB = os.environ.get('MONGODB_DB')
 # MongoDB Collections
 COLLECTION_CMI = os.environ.get('COLLECTION_CMI')
 COLLECTION_CERT = os.environ.get('COLLECTION_CERT')
+COLLECTION_CMI_FLAT = os.environ.get('COLLECTION_CMI_FLAT')
 
 client = MongoClient(MONGODB_URI, server_api=ServerApi('1'))
 db = client[MONGODB_DB]
@@ -71,17 +71,17 @@ ordinary = {
 
 minimul = {
             '_id': 0,
-            'info_no': 1,
-            'company.name': 1, 
-            'certifications.essential': 1,
+            'infoNo': 1,
+            'companyName': 1, 
+            'certificationsEssential': 1,
         }
 
 require_end_date = {
             '_id': 0,
-            'info_no': 1,
-            'company.name': 1, 
-            'certifications.essential': 1,
-            'hiring_period.end_date': 1,
+            'infoNo': 1,
+            'companyName': 1, 
+            'certificationsEssential': 1,
+            'hiringPeriodEndDate': 1,
         }
 ########################################################################################################################################################################################################################
 @ping.route('/')
@@ -105,25 +105,31 @@ class PingMongo(Resource):
 @company_list.route('/recent/page/main')
 class RecentCompanyList(Resource):
     @company_list.header('Bearer', 'JWT 토큰', required = False)
-    @company_list.doc(description='최근 채용공고 리스트를 반환합니다.')
+    @company_list.doc(description='JWT 토큰 있으면, 최근 채용 공고에서 요구하는 필수 자격증과 회원이 보유한 자격증 비교.\n 없으면 최근 채용 공고 리스트 반환.')
     
-    def get(self):
-        collection = db[COLLECTION_CMI]
-        auth_header = request.headers.get('Bearer')
+    @company_list.response(402, 'Invalid Token')
+    @company_list.response(401, 'Expired Token')
+    @company_list.response(500, 'DB Connection Error')
 
-        company_list = collection.find({}, minimul).sort("hiring_period.start_date.$date", -1).limit(6)
+    def get(self) -> str:
+        '''최근 채용 공고 기업 메인페이지용'''
+        collection = db[COLLECTION_CMI_FLAT]
+        token = request.headers.get('Bearer')
+
+        company_list = collection.find({}, minimul).sort("hiringPeriodStartDate", -1).limit(6)
         company_list = list(company_list)
-        company_list = simplify_certifications_to_list(company_list)
+
+        company_list = simplify_certifications_to_list_names(company_list)
 
         # 토큰이 있는 경우
-        if auth_header:
-            user_id = decode_token(JWT_SECRET_KEY, auth_header)
+        if token:
+            user_id = decode_token(JWT_SECRET_KEY, token)
 
-            if user_id == 400:
+            if user_id == 402:
                 return {
                     "status": "fail",
                     "message": "Invalid Token"
-                }, 400
+                }, 402
             elif user_id == 401:
                 return {
                     "status": "fail",
@@ -139,7 +145,7 @@ class RecentCompanyList(Resource):
                     }, 500
 
                 # 회사에서 요구하는 자격증 중 회원이 가지고 있는 자격증과 비교하여 분류
-                company_list = user_certifications_classification(company_list, user_certification)
+                company_list = user_certifications_classification_by_essential(company_list, user_certification)
 
         return {
             "description": "최근 채용공고 리스트",
@@ -150,40 +156,47 @@ class RecentCompanyList(Resource):
 @company_list.route('/certification/page/main')
 class SearchCertification(Resource):
     @company_list.header('Bearer', 'JWT 토큰', required = False)
-    @company_list.doc(description='자격증 기반 회사 리스트를 반환합니다.')
+    @company_list.doc(description='JWT 토큰 있으면, 회원이 가지고 있는 자격증을 기반으로 회사 리스트를 반환.\n 없으면 랜덤 자격증을 기반으로 회사 리스트를 반환.')
 
-    def get(self):
-        auth_header = request.headers.get('Bearer')
+    @company_list.response(402, 'Invalid Token')
+    @company_list.response(401, 'Expired Token')
+    @company_list.response(500, 'DB Connection Error')
+
+    def get(self) -> str:
+        """@@ 자격증으로 가능한 기업 메인페이지용"""
+
+        token = request.headers.get('Bearer')
         
         # 로그인 상태가 아니거나 토큰이 없는 경우
-        if not auth_header:
+        if not token:
             collection = db[COLLECTION_CERT]
-            certification_list = collection.find({}, {'_id': 0,'info_no':1, 'certifications': 1})
+            certification_list = collection.find({}, {'_id': 0, 'certifications': 1})
             certification_list = list(certification_list)
 
             random_certification = random.choice(certification_list)
             random_certification = random.choice(random_certification['certifications'])
 
             query = {
-                'certifications.essential.name': {'$in': [random_certification]}
+                'certificationsEssential.name': {'$in': [random_certification]}
             }
 
             description = "랜덤 필수 자격증 기반 회사 리스트"
-        else:
-            user_id = decode_token(JWT_SECRET_KEY, auth_header)
 
-            if user_id == 400:
+        else:
+            user_id = decode_token(JWT_SECRET_KEY, token)
+
+            if user_id == 402:
                 return {
                     "status": "fail",
-                    "message": "Invalid Token"
-                }, 400
+                    "message": "Token has expired"
+                }, 402
             elif user_id == 401:
                 return {
                     "status": "fail",
-                    "message": "Expired Token"
+                    "message": "Invalid token"
                 }, 401
-            else:
-                print(user_id)
+            
+            else: # 유저 ID 가 정상적으로 반환된 경우 MySQL에서 유저의 자격증 리스트를 가져옴
                 user_certification = get_user_certifications_mysql(user_id)
 
                 if user_certification == 500:
@@ -195,20 +208,20 @@ class SearchCertification(Resource):
                 user_random_certification = random.choice(user_certification)
 
                 query = {
-                'certifications.essential.name': {'$in': [user_random_certification]}
+                'certificationsEssential.name': {'$in': [user_random_certification]}
                 }
 
                 description = "유저 보유 자격증 기반 회사 리스트"
         
-        collection = db[COLLECTION_CMI]
-        company_list = collection.find(query, {'_id': 0, 'company.name': 1, 'hiring_period.end_date': 1}).limit(4)
+        collection = db[COLLECTION_CMI_FLAT]
+        company_list = collection.find(query, {'_id': 0, 'infoNo': 1, 'companyName': 1, 'hiringPeriodEndDate': 1}).limit(6)
         company_list = list(company_list)
 
         company_list = serialize_company_list(company_list)
 
         company_list = {
             "description": description,
-            "search_certification": random_certification if not auth_header else user_random_certification,
+            "search_certification": random_certification if not token else user_random_certification,
             'company_list': company_list
         }
 
@@ -219,37 +232,46 @@ class SearchCertification(Resource):
 class TryCompanyList(Resource):
     @company_list.header('Bearer', 'JWT 토큰', required = False)
     @company_list.param('page', '페이지 유형 main / try', 'query')
-    @company_list.doc(description='유저의 자격증 적합도에 따른 회사 리스트를 반환합니다.')
+    @company_list.doc(description='JWT가 없으면 401 반환. 유저의 자격증 적합도에 따른 회사 리스트 반환.\n page 가 main 이면 2개, try 이면 4개 반환.')
     
-    def get(self, page):
-        auth_header = request.headers.get('Bearer')
+    @company_list.response(400, 'Unauthorized')
+    @company_list.response(402, 'Invalid Token')
+    @company_list.response(401, 'Expired Token')
+    @company_list.response(404, 'Invalid Page')
+    @company_list.response(500, 'DB Connection Error')
+
+    def get(self, page) -> str:
+        """유저의 자격증 적합도에 따른 회사 리스트 1Try / 2Try / 3Try"""
+
+        token = request.headers.get('Bearer')
         
-        collection = db[COLLECTION_CMI]
-        company_list = collection.find({}, require_end_date)
-        company_list = list(company_list)
-
-        company_list = serialize_company_list(company_list)
-        company_list = add_d_day_to_companies(company_list)
-
-        if not auth_header:
+        if not token:
             # 토큰 없을 경우 애초에 표시 안함
             return {
                 "status": "fail",
                 "message": "Unauthorized"
-            }, 401
+            }, 400
+        
+        collection = db[COLLECTION_CMI_FLAT]
+        company_list = collection.find({}, require_end_date)
+        company_list = list(company_list)
 
-        user_id = decode_token(JWT_SECRET_KEY, auth_header)
+        company_list = simplify_certifications_to_list_names(company_list)
+        company_list = add_d_day_to_companies(company_list)
 
-        if user_id == 400:
+        user_id = decode_token(JWT_SECRET_KEY, token)
+
+        if user_id == 402:
             return {
                 "status": "fail",
                 "message": "Invalid Token"
-            }, 400
+            }, 402
         elif user_id == 401:
             return {
                 "status": "fail",
                 "message": "Expired Token"
             }, 401
+        
         else:
             user_certification = get_user_certifications_mysql(user_id)
 
@@ -260,23 +282,22 @@ class TryCompanyList(Resource):
                 }, 500
 
             # 회사에서 요구하는 자격증 중 회원이 가지고 있는 자격증과 비교하여 분류 - have, havent
-            company_list = user_certifications_classification(company_list, user_certification)
+            company_list = user_certifications_classification_by_essential(company_list, user_certification)
 
             one_try = []
             two_try = []
             three_try = []
 
             for company in company_list:
-                cert_len = len(company["certifications"]["havent"])
+                cert_len = len(company["certificationsEssentialUserHavent"])
                 if cert_len == 0:
-                    company['userTryRate'] = 1
                     one_try.append(company)
                 elif cert_len == 1:
-                    company['userTryRate'] = 2
                     two_try.append(company)
                 else:
-                    company['userTryRate'] = 3
                     three_try.append(company)
+
+                del company["certificationsEssential"]
             
         
         if page == 'main':
@@ -287,14 +308,13 @@ class TryCompanyList(Resource):
             return {
                 "status": "fail",
                 "message": "Invalid Page"
-            }, 400
+            }, 404
         
         return {
             "description": "유저의 자격증 적합도에 따른 회사 리스트",
-            "company_list": {'one_try': [random.sample(one_try, min(len(one_try), output_count))],
-                             'two_try': [random.sample(two_try, min(len(two_try), output_count))],
-                             'three_try': [random.sample(three_try, min(len(three_try), output_count))],
-                            }
+            'one_try': [random.sample(one_try, min(len(one_try), output_count))],
+            'two_try': [random.sample(two_try, min(len(two_try), output_count))],
+            'three_try': [random.sample(three_try, min(len(three_try), output_count))],
         }, 200
 
 ########################################################################################################################################################################################################################    
