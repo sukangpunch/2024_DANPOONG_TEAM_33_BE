@@ -42,10 +42,10 @@ public class UserController {
     }
 
     @Operation(summary = "프로필 사진 조회",description = "유저의 프로필 사진을 조회합니다.")
-    @GetMapping("/profile/{email}")
-    public ResponseEntity<byte[]> findProfileImg(@PathVariable("email") String email) {
+    @GetMapping("/profile")
+    public ResponseEntity<byte[]> findProfileImg(@AuthenticationPrincipal UserDetails userDetails) {
         return ResponseEntity.status(HttpStatus.OK).contentType(MediaType.IMAGE_PNG).body(
-                userService.downloadProfileFromFileSystem(email)
+                userService.downloadProfileFromFileSystem(userDetails.getUsername())
         );
     }
 

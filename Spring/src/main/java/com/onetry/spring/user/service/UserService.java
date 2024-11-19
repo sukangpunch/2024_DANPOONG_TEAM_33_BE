@@ -34,7 +34,7 @@ public class UserService {
 
     public byte[] downloadProfileFromFileSystem(String email) {
         User user = userRepository.findByEmail(email).orElseThrow(()-> new CustomException(ExceptionCode.USER_NOT_EXIST));
-        byte[] profileImg= fileComponent.downloadProfileFromFileSystem(user.getProfileFilePath());
+        byte[] profileImg= fileComponent.downloadPhotoFromFileSystem(user.getProfileFilePath());
         return profileImg;
     }
 
@@ -44,7 +44,7 @@ public class UserService {
         String updateFilePath = FOLDER_PATH + updateFileName;
         log.info("새로운 이미지 경로 : {}", updateFilePath);
 
-        fileComponent.updateFileSystemProfileImg(user.getProfileFilePath(), updateFilePath, updateFile);
+        fileComponent.updateFileSystemPhotoImg(user.getProfileFilePath(), updateFilePath, updateFile);
 
         user.updateUserProfileUrl(updateFilePath);
 
