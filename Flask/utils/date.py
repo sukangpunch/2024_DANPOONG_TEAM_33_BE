@@ -35,14 +35,18 @@ def calculate_d_day(date_str):
     return d_day
 
 def serialize_company_list(company_list):
+    def convert_date_if_needed(company, date_field):
+        """날짜가 datetime 객체인 경우 isoformat()으로 변환"""
+        if date_field in company and isinstance(company[date_field], datetime):
+            company[date_field] = company[date_field].isoformat()
 
-    for company in company_list:
-        # 날짜를 문자열로 변환
-        if 'hiringPeriodEndDate' in company:
-            company['hiringPeriodEndDate'] = company['hiringPeriodEndDate'].isoformat()
-
-        elif 'hiringPeriodStartDate' in company:
-            company['hiringPeriodStartDate'] = company['hiringPeriodStartDate'].isoformat()
+    if isinstance(company_list, list):
+        for company in company_list:
+            convert_date_if_needed(company, 'hiringPeriodEndDate')
+            convert_date_if_needed(company, 'hiringPeriodStartDate')
+    else:
+        # 리스트가 아닌 경우 (단일 company)
+        convert_date_if_needed(company_list, 'hiringPeriodEndDate')
+        convert_date_if_needed(company_list, 'hiringPeriodStartDate')
 
     return company_list
-
