@@ -57,8 +57,7 @@
       "position": "데이터 엔지니어",
       "companyName": "데이터브릿지",
       "companyLocationRegion": "경기도",
-      "companyLocationCity": "남양주시",
-      "companyLocationDistrict": [],
+      "companyLocationSubregion": "남양주시",
       "companyRating": "A+",
       "requiredEducation": "대학교 졸업",
       "salaryMin": 2500,
@@ -85,7 +84,20 @@
       "portfolioScore": 4,
       "experienceLevel": "경력",
       "experienceRequiredYears": 5,
-      "hiringPeriodDday": -45
+      "hiringPeriodDday": -45,
+      "UserApplyAble": 1,
+      "userScore": 60,
+      "userRate": "B+",
     }
   ]
   
+  {
+    "_id": {
+      "$oid": "673c25ef45b9fe4b002353ba"
+    },
+    "infoNo": 1,
+    "applyCount": 15,
+    "applyAverageScore": 57,
+    "applyAverageRate": "B-",
+    "viewCount": 1851,
+  }
