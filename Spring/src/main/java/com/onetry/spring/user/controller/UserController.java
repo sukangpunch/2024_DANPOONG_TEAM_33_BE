@@ -64,7 +64,6 @@ public class UserController {
         );
     }
 
-
     @Operation(summary = "유저 정보 수정",description = "해당 유저의 정보를 수정합니다. " + "<br> 아직까진 이름만 변경")
     @PatchMapping("/update")
     public ResponseEntity<CommonResponseDto<UserInfoResDto>> updateUserInfo(@AuthenticationPrincipal UserDetails userDetails,

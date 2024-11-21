@@ -22,7 +22,15 @@ public enum ExceptionCode {
 
     // Portfolio Exception
     PORTFOLIO_NOT_EXIST(HttpStatus.BAD_REQUEST, "해당 포트폴리오가 존재하지 않습니다."),
-    UNAUTHORIZED_ACCESS_PORTFOLIO(HttpStatus.BAD_REQUEST,"해당 포트폴리오를 조회할 권한이 없습니다.");
+    UNAUTHORIZED_ACCESS_PORTFOLIO(HttpStatus.BAD_REQUEST,"해당 포트폴리오를 조회할 권한이 없습니다."),
+
+    // Transcript Exception
+    TRANSCRIPT_NOT_EXIST(HttpStatus.BAD_REQUEST, "해당 성적 증명서가 존재하지 않습니다."),
+
+    // Volunteering Exception
+    VOLUNTEERING_NOT_EXIST(HttpStatus.BAD_REQUEST, "해당 봉사활동이 존재하지 않습니다.");
+
+
 
     private final HttpStatus status;
     private final String message;
