@@ -4,10 +4,6 @@ def transfer_score_to_rate_company_info_list(company_list):
     """
     for company in company_list:
 
-        if not company["userScore"]:
-            company["userRate"] = "F"
-            break
-
         if company["userScore"] >= 100:
             company["userRate"] = "A+"
         elif company["userScore"] >= 85:
