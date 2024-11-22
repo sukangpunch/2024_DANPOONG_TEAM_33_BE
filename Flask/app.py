@@ -19,7 +19,7 @@ from utils.jwt import decode_token
 from utils.user import user_certifications_classification_by_essential, calculate_user_score_by_essential, check_user_apply_able
 from utils.rate import transfer_score_to_rate_company_info_list, transfer_score_to_rate_company_extra_info_list
 from utils.simplify import simplify_certifications_to_list_names
-from utils.mysql.user import get_user_certifications_mysql
+from utils.mysql.user import get_user_certifications_mysql, get_user_applied_company_mysql
 from utils.date import add_d_day_to_companies, serialize_company_list
 from utils.company import make_company_title
 ########################################################################################################################################################################################################################    
@@ -36,6 +36,7 @@ MONGODB_DB = os.environ.get('MONGODB_DB')
 COLLECTION_CMI = os.environ.get('COLLECTION_CMI')
 COLLECTION_CERT = os.environ.get('COLLECTION_CERT')
 COLLECTION_EXTRA_CMI = os.environ.get('COLLECTION_EXTRA_CMI')
+COLLECTION_USER = os.environ.get('COLLECTION_USER')
 
 client = MongoClient(MONGODB_URI, server_api=ServerApi('1'))
 db = client[MONGODB_DB]
@@ -49,12 +50,23 @@ CORS(app)
 
 blueprint = Blueprint('api', __name__, url_prefix='/flask')
 
+# Swagger의 Authorization 설정
+authorizations = {
+    'BearerAuth': {
+        'type': 'apiKey',
+        'in': 'header',
+        'name': 'Bearer'
+    }
+}
+
 # API 인스턴스 생성
 api = Api(
     blueprint,
     version='1.00',
     title='Onet Flask API',
-    description='Flask API for Onet',
+    description='다음부턴 FAST API 쓰겠습니다..',
+    authorizations=authorizations,
+    security='BearerAuth',
     doc='/docs'
 )
 
@@ -62,10 +74,12 @@ app.register_blueprint(blueprint)
 ########################################################################################################################################################################################################################    
 # 네임스페이스 설정  
 
-ping = api.namespace('ping', description = '상태 확인 API')
+user = api.namespace('user', description = '유저 정보 API')
+search = api.namespace('search', description = '검색 API')
+company_info = api.namespace('company/info', description = '회사 정보 API')
 company_list = api.namespace('company/list', description = '회사 리스트 API')
-search = api.namespace('search', description = '검색 관련 API')
-apply = api.namespace('apply', description = '지원창 관련 API') 
+company_apply = api.namespace('company/apply', description = '회사 지원 API') 
+ping = api.namespace('ping', description = '상태 확인 API')
 ########################################################################################################################################################################################################################
 # 필드 설정
 ordinary = {
@@ -126,7 +140,7 @@ class RecentCompanyList(Resource):
 
     def get(self) -> str:
         '''최근 채용 공고 기업 메인페이지용'''
-        collection = db[COLLECTION_CERT]
+        collection = db[COLLECTION_CMI]
         token = request.headers.get('Bearer')
 
         company_list = collection.find({}, minimul).sort("hiringPeriodStartDate", -1).limit(6)
@@ -150,12 +164,8 @@ class RecentCompanyList(Resource):
                 }, 401
             else:
                 user_certification = get_user_certifications_mysql(user_id)
-                if not user_certification:
-                    return {
-                        "description": "최근 채용공고 리스트",
-                        "company_list": company_list
-                    }, 200
-                elif user_certification == 500:
+
+                if user_certification == 500:
                     return {
                         "status": "fail",
                         "message": "DB Connection Error"
@@ -242,15 +252,15 @@ class SearchCertification(Resource):
                     description = "유저 보유 자격증 기반 회사 리스트"
 
         # DB에서 회사 리스트 가져오기
-        collection = db[COLLECTION_CERT]
-        company_list = collection.find(query, {'_id': 0, 'infoNo': 1, 'companyName': 1, 'hiringPeriodEndDate': 1}).limit(6)
+        collection = db[COLLECTION_CMI]
+        company_list = collection.find(query, {'_id': 0, 'infoNo': 1, 'companyName': 1, 'hiringPeriodEndDate': 1, "companyImageURL": 1}).limit(10)
         company_list = list(company_list)
 
         company_list = serialize_company_list(company_list)
 
         company_list = {
             "description": description,
-            "search_certification": random_certification if not token else user_random_certification,
+            "search_certification": random_certification if not token or not user_certification else user_random_certification,
             'company_list': company_list
         }
 
@@ -273,7 +283,7 @@ class TryCompanyList(Resource):
     def get(self, page) -> str:
         """유저의 자격증 적합도에 따른 회사 리스트 1Try / 2Try / 3Try"""
         def main_dish(shown_feild):
-            collection = db[COLLECTION_CERT]
+            collection = db[COLLECTION_CMI]
             company_list = collection.find({}, shown_feild)
             company_list = list(company_list)
 
@@ -324,7 +334,12 @@ class TryCompanyList(Resource):
                 "status": "fail",
                 "message": "No User Certification"
             }, 204
-        if user_certification == 500:
+        elif len(user_certification) < 3:
+            return {
+                "status": "fail",
+                "message": "User Certification is less than 3"
+            }, 204
+        elif user_certification == 500:
             return {
                 "status": "fail",
                 "message": "DB Connection Error"
@@ -356,25 +371,28 @@ class TryCompanyList(Resource):
         }, 200
 
 ########################################################################################################################################################################################################################
-@company_list.route('/info/page/info')
-class InfoCompanyList(Resource):
-    @company_list.param('page', '페이지 번호', 'query', type=int, required=True)
-    @company_list.param('limit', '페이지 당 항목 수', 'query', type=int, required=False, default=12)
+@search.route('/')
+class Search(Resource):
+    @search.param('page', '페이지 번호', 'query', type=int, required=True)
+    @search.param('limit', '페이지 당 항목 수', 'query', type=int, required=False, default=12)
+    @search.param('search', '검색', 'query', type=str, required=True)
     @search.header('Bearer', 'JWT 토큰', required = False)
-    @company_list.doc(description='페이지네이션을 사용하여 회사 리스트를 반환합니다.')
+    @search.doc(description='검색어를 바탕으로 페이지네이션을 사용하여 회사 리스트를 반환합니다.')
 
-    def get(self):
+    def get(self) -> str:
+        '''통합 검색'''
         page = request.args.get('page', default=1, type=int)
         limit = request.args.get('limit', default=12, type=int)
+        search = request.args.get('search', type=str)
         skip = (page - 1) * limit
 
-        collection = db[COLLECTION_CERT]
-        company_list = collection.find({}, require_company_title).skip(skip).limit(limit)
+        collection = db[COLLECTION_CMI]
+        company_list = collection.find({"$text": {"$search": search}}, require_company_title).skip(skip).limit(limit)
         company_list = list(company_list)
 
         company_list = simplify_certifications_to_list_names(company_list)
         company_list = add_d_day_to_companies(company_list)
-        company_list = make_company_title(company_list)
+        # company_list = make_company_title(company_list)
 
         token = request.headers.get('Bearer')
         
@@ -394,12 +412,6 @@ class InfoCompanyList(Resource):
             
             else: # 유저 ID 가 정상적으로 반환된 경우 MySQL에서 유저의 자격증 리스트를 가져옴
                 user_certification = get_user_certifications_mysql(user_id)
-                
-                if not user_certification:
-                    return {
-                        "description": f"회사 리스트 {page} 페이지",
-                        "company_list": company_list
-                    }, 200
 
                 if user_certification == 500:
                     return {
@@ -410,7 +422,7 @@ class InfoCompanyList(Resource):
                 company_list = user_certifications_classification_by_essential(company_list, user_certification)
 
         return {
-            "description": f"회사 리스트 {page} 페이지",
+            "description": f"{search} 검색 {page} 페이지",
             "company_list": company_list
         }, 200
 ########################################################################################################################################################################################################################
@@ -535,12 +547,6 @@ class SearchCertification(Resource):
             else: # 유저 ID 가 정상적으로 반환된 경우 MySQL에서 유저의 자격증 리스트를 가져옴
                 user_certification = get_user_certifications_mysql(user_id)
 
-                if not user_certification:
-                    return {
-                        "description": f"{certification} 자격증을 요구하는 회사 리스트",
-                        "company_list": company_list
-                    }, 200
-
                 if user_certification == 500:
                     return {
                         "status": "fail",
@@ -549,18 +555,16 @@ class SearchCertification(Resource):
                 
                 company_list = user_certifications_classification_by_essential(company_list, user_certification)
 
-        company_list = {
+        return {
             "description": f"{certification} 자격증을 요구하는 회사 리스트",
             'company_list': company_list
-        }
-
-        return company_list, 200
+        }, 200
 
 ########################################################################################################################################################################################################################
-@apply.route('/page/1')
+@company_apply.route('/page/1')
 class ApplyPageOne(Resource):
-    @apply.header('Bearer', 'JWT 토큰', required=False)
-    @apply.param('infoNo', '회사 번호', required=True, type=int)
+    @company_apply.header('Bearer', 'JWT 토큰', required=False)
+    @company_apply.param('infoNo', '회사 번호', required=True, type=int)
 
     def get(self) -> str:
         """회사 지원 페이지 1"""
@@ -587,7 +591,6 @@ class ApplyPageOne(Resource):
 
         # 토큰 확인
         token = request.headers.get('Bearer')
-
         if token:
             user_id = decode_token(JWT_SECRET_KEY, token)
 
@@ -602,6 +605,13 @@ class ApplyPageOne(Resource):
                     "message": "Invalid token"
                 }, 401
 
+            # 유저가 최근 본 기업에 추가
+            collection = db[COLLECTION_USER]
+            collection.update_one(
+                {'userID': user_id},
+                {'$push': {'recentlyViewed': infoNo}}
+            )
+
             # 유저 ID가 정상적으로 반환된 경우 MySQL에서 유저의 자격증 리스트를 가져옴
             user_certification = get_user_certifications_mysql(user_id)
 
@@ -614,88 +624,84 @@ class ApplyPageOne(Resource):
                     "status": "fail",
                     "message": "DB Connection Error"
                 }, 500
-            else:
-                # 회사 기본 정보 조회
-                collection = db[COLLECTION_CMI]
-                company_list = list(collection.find({}, {'_id': 0}))
+            
+            # 회사 기본 정보 조회
+            collection = db[COLLECTION_CMI]
+            company_list = list(collection.find({}, {'_id': 0}))
 
-                # 회사 추가 정보 조회
-                company_extra_list = list(collection.find({}, {'_id': 0}))
+            # 회사 추가 정보 조회
+            collection = db[COLLECTION_EXTRA_CMI]
+            company_extra_list = list(collection.find({}, {'_id': 0}))
 
-                # D-day와 제목 관련 데이터 처리
-                company_list = add_d_day_to_companies(company_list)
-                company_list = make_company_title(company_list, 0)
+            # D-day와 제목 관련 데이터 처리
+            company_list = add_d_day_to_companies(company_list)
+            company_list = make_company_title(company_list, 0)
 
-                # 회사 추가 정보에 지원 평균 점수를 레이트로 변환
-                company_extra_list = transfer_score_to_rate_company_extra_info_list(company_extra_list)
+            # 회사 추가 정보에 지원 평균 점수를 레이트로 변환
+            company_extra_list = transfer_score_to_rate_company_extra_info_list(company_extra_list)
 
-                # 자격증 기반 유저 점수 계산
-                company_list = calculate_user_score_by_essential(company_list, user_certification)
-                # 유저 점수로 레이팅 부여
-                company_list = transfer_score_to_rate_company_info_list(company_list)
-                # 회사 필수 자격증 리스트화
-                company_list = simplify_certifications_to_list_names(company_list)
-                # 유저가 가진 자격증과 회사가 요구하는 자격증 비교
-                company_list = user_certifications_classification_by_essential(company_list, user_certification)
-                # 지원 가능 여부 확인
-                company_list = check_user_apply_able(company_list)
+            # 자격증 기반 유저 점수 계산
+            company_list = calculate_user_score_by_essential(company_list, user_certification)
+            # 유저 점수로 레이팅 부여
+            company_list = transfer_score_to_rate_company_info_list(company_list)
+            # 회사 필수 자격증 리스트화
+            company_list = simplify_certifications_to_list_names(company_list)
+            # 유저가 가진 자격증과 회사가 요구하는 자격증 비교
+            company_list = user_certifications_classification_by_essential(company_list, user_certification)
+            # 지원 가능 여부 확인
+            company_list = check_user_apply_able(company_list)
+            # 파라미터로 받은 infoNo에 대한 회사 정보만 추출
+            company_info = [company for company in company_list if company['infoNo'] == infoNo][0]
 
-                # 파라미터로 받은 infoNo에 대한 회사 정보만 추출
-                company_info = [company for company in company_list if company['infoNo'] == infoNo][0]
+            company_extra_info = [company for company in company_extra_list if company['infoNo'] == infoNo][0]
 
-                company_extra_info = [company for company in company_extra_list if company['infoNo'] == infoNo][0]
+            # company_extra_info에서의 applyAverageRate와 같은 등급을 가진 회사 리스트 추출
+            same_rate_company_list = []
 
-                # company_extra_info에서의 applyAverageRate와 같은 등급을 가진 회사 리스트 추출
-                same_rate_company_list = []
+            for company_extra in company_extra_list:
+                if company_extra['applyAverageRate'] == company_extra_info['applyAverageRate'] and company_extra['infoNo'] != infoNo:
+                    for company in company_list:
+                        if company['userApplyAble'] == 1 and company['infoNo'] == company_extra['infoNo']:
+                            data = {
+                                "infoNo": company['infoNo'],
+                                "companyName": company['companyName'],
+                                "hiringPeriodEndDate": company['hiringPeriodEndDate'],
+                                "applyAverageRate": company_extra['applyAverageRate'],
+                                "applyCount": company_extra['applyCount'],
+                            }
 
-                for company_extra in company_extra_list:
-                    if company_extra['applyAverageRate'] == company_extra_info['applyAverageRate']:
-                        for company in company_list:
-                            # 같은 등급의 회사 리스트에 중복 추가 방지
-                            if company['infoNo'] == infoNo:
-                                break
+                            same_rate_company_list.append(data)
+                            break
+                        elif not user_certification and company['infoNo'] == company_extra['infoNo']:
+                            data = {
+                                "infoNo": company['infoNo'],
+                                "companyName": company['companyName'],
+                                "hiringPeriodEndDate": company['hiringPeriodEndDate'],
+                                "applyAverageRate": company_extra['applyAverageRate'],
+                                "applyCount": company_extra['applyCount'],
+                            }
 
-                            if company['UserApplyAble'] == 1 and company['infoNo'] == company_extra['infoNo']:
-                                data = {
-                                    "infoNo": company['infoNo'],
-                                    "companyName": company['companyName'],
-                                    "hiringPeriodEndDate": company['hiringPeriodEndDate'],
-                                    "applyAverageRate": company_extra['applyAverageRate'],
-                                    "applyCount": company_extra['applyCount'],
-                                }
+                            same_rate_company_list.append(data)
+                            break
 
-                                same_rate_company_list.append(data)
-                                break
-                            elif not user_certification and company['infoNo'] == company_extra['infoNo']:
-                                data = {
-                                    "infoNo": company['infoNo'],
-                                    "companyName": company['companyName'],
-                                    "hiringPeriodEndDate": company['hiringPeriodEndDate'],
-                                    "applyAverageRate": company_extra['applyAverageRate'],
-                                    "applyCount": company_extra['applyCount'],
-                                }
+            # company_extra_info에서의 applyAverageRate와 보다 높은 등급을 가진 회사 리스트 추출
+            upper_rate_company_list = []
 
-                                same_rate_company_list.append(data)
-                                break
+            for company_extra in company_extra_list:
+                if company_extra['applyAverageRate'] != company_extra_info['applyAverageRate'] and company_extra[
+                    'applyAverageScore'] >= company_extra_info['applyAverageScore'] and company_extra['infoNo'] != infoNo:
+                    for company in company_list:
+                        if company['userApplyAble'] == 1 and company['infoNo'] == company_extra['infoNo']:
+                            data = {
+                                "infoNo": company['infoNo'],
+                                "companyName": company['companyName'],
+                                "hiringPeriodEndDate": company['hiringPeriodEndDate'],
+                                "applyAverageRate": company_extra['applyAverageRate'],
+                                "applyCount": company_extra['applyCount'],
+                            }
 
-                # company_extra_info에서의 applyAverageRate와 보다 높은 등급을 가진 회사 리스트 추출
-                upper_rate_company_list = []
-
-                for company_extra in company_extra_list:
-                    if company_extra['applyAverageRate'] != company_extra_info['applyAverageRate'] and company_extra[
-                        'applyAverageScore'] >= company_extra_info['applyAverageScore']:
-                        for company in company_list:
-                            if company['UserApplyAble'] == 1 and company['infoNo'] == company_extra['infoNo']:
-                                data = {
-                                    "infoNo": company['infoNo'],
-                                    "companyName": company['companyName'],
-                                    "hiringPeriodEndDate": company['hiringPeriodEndDate'],
-                                    "applyAverageRate": company_extra['applyAverageRate'],
-                                    "applyCount": company_extra['applyCount'],
-                                }
-
-                                upper_rate_company_list.append(data)
-                                break
+                            upper_rate_company_list.append(data)
+                            break
 
             return {
                 "description": f"{infoNo} 회사 정보 및 같은 등급 기업 리스트, 높은 등급 기업 리스트",
@@ -718,8 +724,6 @@ class ApplyPageOne(Resource):
             company_extra_list = transfer_score_to_rate_company_extra_info_list(company_extra_list)
 
             company_extra_info = [company for company in company_extra_list if company['infoNo'] == infoNo][0]
-
-            print(company_extra_info['applyAverageRate'])
 
             # company_extra_info에서의 applyAverageRate와 같은 등급을 가진 회사 리스트 추출
             same_rate_company_list = []
@@ -753,7 +757,131 @@ class ApplyPageOne(Resource):
                 "upperRateCompany": []
             }, 200
 
+########################################################################################################################################################################################################################
+@company_apply.route('/page/2')
+class ApplyPageTwo(Resource):
+    @company_apply.header('Bearer', 'JWT 토큰', required=False)
+    @company_apply.expect('infoNo', '회사 번호', required=True, type=int)
+
+    def get(self) -> str:
+        """회사 지원 페이지 2"""
 ########################################################################################################################################################################################################################    
+@user.route('/applied/company')
+class UserAppliedCompany(Resource):
+    @user.header('Bearer', 'JWT 토큰', required=True)
+    @user.doc(description='회원이 지원한 회사 리스트의 infoNo 와 IMG 만 반환')
+
+    @user.response(400, 'Unauthorized')
+    @user.response(401, 'Invalid Token')
+    @user.response(402, 'Expired Token')
+    @user.response(204, '유저가 지원한 회사가 없습니다')
+    @user.response(500, 'DB Connection Error')
+
+    def get(self) -> str:
+        '''회원이 지원한 회사 리스트 반환'''
+        token = request.headers.get('Bearer')
+
+        if not token:
+            return {
+                "status": "fail",
+                "message": "Unauthorized"
+            }, 400
+
+        user_id = decode_token(JWT_SECRET_KEY, token)
+
+        if user_id == 402:
+            return {
+                "status": "fail",
+                "message": "Token has expired"
+            }, 402
+        elif user_id == 401:
+            return {
+                "status": "fail",
+                "message": "Invalid token"
+            }, 401
+
+        user_applied_company = get_user_applied_company_mysql(user_id)
+
+        if not user_applied_company:
+            return {
+                "description": "유저가 지원한 회사가 없습니다",
+                "company_list": []
+            }, 204
+        elif user_applied_company == 500:
+            return {
+                "description": "fail",
+                "message": "DB Connection Error"
+            }, 500
+        else: 
+            collection = db[COLLECTION_CMI]
+            company_list = collection.find({'infoNo': {'$in': user_applied_company}}, {'_id': 0, 'infoNo': 1, 'companyImageURL': 1})
+            company_list = list(company_list)
+
+        return {
+            "description": "회원이 지원한 회사 리스트",
+            "company_list": company_list
+        }, 200
+########################################################################################################################################################################################################################
+@user.route('/viewed/company')
+class UserViewedCompany(Resource):
+    @user.header('Bearer', 'JWT 토큰', required=True)
+    @user.doc(description='회원보유한 자격증과 회사가 요구하는 자격증을 비교하여 회사 리스트 반환')
+
+    @user.response(400, 'Unauthorized')
+    @user.response(401, 'Invalid Token')
+    @user.response(402, 'Expired Token')
+    @user.response(500, 'DB Connection Error')
+    def get(self) -> str:
+        '''최근에 본 기업공고 '''
+
+        token = request.headers.get('Bearer')
+
+        if not token:
+            return {
+                "status": "fail",
+                "message": "Unauthorized"
+            }, 400
+
+        user_id = decode_token(JWT_SECRET_KEY, token)
+
+        if user_id == 402:
+            return {
+                "status": "fail",
+                "message": "Token has expired"
+            }, 402
+        elif user_id == 401:
+            return {
+                "status": "fail",
+                "message": "Invalid token"
+            }, 401
+        
+        collection = db[COLLECTION_USER]
+        user_recently_viewed = collection.find_one({'userID': user_id}, {'recentlyViewed': 1, '_id': 0})
+        user_recently_viewed = user_recently_viewed['recentlyViewed']
+
+        collection = db[COLLECTION_CMI]
+        company_list = collection.find({'infoNo': {'$in': user_recently_viewed}}, require_end_date)
+        company_list = list(company_list)
+
+        company_list = simplify_certifications_to_list_names(company_list)
+        company_list = add_d_day_to_companies(company_list)
+        
+        user_certification = get_user_certifications_mysql(user_id)
+
+        if user_certification == 500:
+            return {
+                "status": "fail",
+                "message": "DB Connection Error"
+            }, 500
+
+        company_list = user_certifications_classification_by_essential(company_list, user_certification, 1)
+
+        return {
+            "description": "최근에 본 기업공고",
+            "company_list": company_list
+        }, 200
+
+########################################################################################################################################################################################################################
 # App Run
 if __name__ == '__main__':
     app.run(debug=True, port=FLASK_PORT)

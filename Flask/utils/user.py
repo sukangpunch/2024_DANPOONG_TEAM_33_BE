@@ -1,11 +1,10 @@
-def user_certifications_classification_by_essential(company_list, user_certifications):
+def user_certifications_classification_by_essential(company_list, user_certifications, del_esstential = 0):
     """
     company_list: 기업이 요구하는 자격증 리스트 (문자열의 리스트 형식)
     user_certifications: 유저가 보유한 자격증 리스트 (문자열의 리스트 형식)
     """
 
     for company in company_list:
-
         have = []
         havent = []
 
@@ -17,6 +16,9 @@ def user_certifications_classification_by_essential(company_list, user_certifica
 
         company["certificationsEssentialUserHave"] = have
         company["certificationsEssentialUserHavent"] = havent
+
+        if del_esstential == 1:
+            del company["certificationsEssential"]
 
     return company_list
 
@@ -37,10 +39,13 @@ def calculate_user_score_by_essential(company_list, user_certifications):
 
         for required_cert in company["certificationsEssential"]:
             if required_cert["name"] in user_certifications:
-                user_score_sum += required_cert["score"] * 1.03  # 필수 자격증은 가산점 3% 적용
+                user_score_sum += int(required_cert["score"]) * 1.03  # 필수 자격증은 가산점 3% 적용
 
                 # user_score_rate를 job_data에 추가
                 company["userScore"] = user_score_sum
+
+        if user_score_sum == 0:
+            company["userScore"] = 0
 
     return company_list
 

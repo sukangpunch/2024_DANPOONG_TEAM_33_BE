@@ -6,3 +6,4 @@ pymysql
 PyJWT
 gunicorn
 flask-cors
+pandas
