@@ -10,7 +10,7 @@ public class WebCorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry){
         registry.addMapping("/**")
-                .allowedOrigins("https://goorm-onet.duckdns.org:8888", "https://2024-danpoong-team-33-fe.vercel.app") // 명시적으로 도메인 지정
+                .allowedOrigins("https://dcu-speakers.store:8888", "https://2024-danpoong-team-33-fe.vercel.app","http://localhost:5137") // 명시적으로 도메인 지정
                 .allowedMethods("GET","POST","PUT","DELETE")
                 .allowCredentials(true);
     }

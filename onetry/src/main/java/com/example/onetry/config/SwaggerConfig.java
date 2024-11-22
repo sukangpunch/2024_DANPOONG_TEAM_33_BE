@@ -41,7 +41,7 @@ public class SwaggerConfig {
 
         Server nginxServer = new Server();
         nginxServer.setDescription("Nginx Proxy Server");
-        nginxServer.setUrl("https://goorm-onet.duckdns.org:8888/spring");
+        nginxServer.setUrl("https://dcu-speakers.store:8888/spring");
 
         return new OpenAPI()
                 .components(new Components().addSecuritySchemes("JWT",bearerAuth))

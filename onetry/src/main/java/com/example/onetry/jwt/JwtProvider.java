@@ -28,8 +28,11 @@ public class JwtProvider {
     private String secret;
     private SecretKey secretKey;
 
-    @Value("${spring.jwt.valid-time}")
-    private Long jwtValidTime;
+    @Value("${spring.jwt.access-token-valid-time}")
+    private Long accessTokenValidTime;
+
+    @Value("${spring.jwt.refresh-token-valid-time}")
+    private Long refreshTokenValidTime;
 
     @PostConstruct // 의존성 주입이 완료된 직후에 자동으로 호출
     // 다른 패키지에서 사용 할 필요가 없기 떄문
@@ -40,14 +43,25 @@ public class JwtProvider {
     }
 
     // 토큰 생성
-    public String createJwt(String email, String role, String name, Long userId){
+    public String createAccessToken(String email, String role, String name, Long userId){
         return Jwts.builder()
                 .claim("userId", userId)
                 .claim("name", name)
                 .claim("email", email)
                 .claim("role",role)
                 .issuedAt(new Date(System.currentTimeMillis()))
-                .expiration(new Date(System.currentTimeMillis() + jwtValidTime))
+                .expiration(new Date(System.currentTimeMillis() + accessTokenValidTime))
+                .signWith(secretKey)
+                .compact();
+    }
+    public String createRefreshToken(String email, String role, String name, Long userId){
+        return Jwts.builder()
+                .claim("userId", userId)
+                .claim("name", name)
+                .claim("email", email)
+                .claim("role",role)
+                .issuedAt(new Date(System.currentTimeMillis()))
+                .expiration(new Date(System.currentTimeMillis() + refreshTokenValidTime))
                 .signWith(secretKey)
                 .compact();
     }

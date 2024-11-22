@@ -1,6 +1,8 @@
 package com.example.onetry.oauth.service;
 
 import com.example.onetry.jwt.JwtProvider;
+import com.example.onetry.jwt.redis.RefreshToken;
+import com.example.onetry.jwt.redis.RefreshTokenRepository;
 import com.example.onetry.mypage.entity.MyPage;
 import com.example.onetry.mypage.repository.MyPageRepository;
 import com.example.onetry.oauth.dto.CheckSignUserDto;
@@ -44,6 +46,7 @@ public class KaKaoOAuth2Service {
     private final ExperienceRepository experienceRepository;
     private final EducationRepository educationRepository;
     private final MyPageRepository myPageRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     @Value("${spring.security.oauth2.client.provider.kakao.authorization-uri}")
     private String kakaoAuthUrl;
@@ -101,14 +104,14 @@ public class KaKaoOAuth2Service {
         Map<String, String> tokens = new HashMap<>();
 
         //토큰 생성
-        String accessToken = jwtProvider.createJwt(kakaoUser.getEmail(), kakaoUser.getRole(),kakaoUser.getName(),kakaoUser.getId());
-        //String refreshToken = jwtProvider.createRefreshToken(kakoUser.getUserId(), kakoUser.getEmail(), kakoUser.getRole());
+        String accessToken = jwtProvider.createAccessToken(kakaoUser.getEmail(), kakaoUser.getRole(),kakaoUser.getName(),kakaoUser.getId());
+        String refreshToken = jwtProvider.createAccessToken(kakaoUser.getEmail(), kakaoUser.getRole(),kakaoUser.getName(),kakaoUser.getId());
 
         tokens.put("Access", accessToken);
-        //tokens.put("Refresh", refreshToken);
+        tokens.put("Refresh", refreshToken);
 
         //레디스에 Refresh 토큰을 저장한다. (사용자 기본키 Id, refresh 토큰 저장)
-        //refreshTokenRepository.save(new RefreshToken(kakoUser.getUserId(), refreshToken));
+        refreshTokenRepository.save(new RefreshToken(kakaoUser.getId(), refreshToken));
 
         return TokenResDto.of(tokens, checkedKaKaoUser.isNewUser());
     }

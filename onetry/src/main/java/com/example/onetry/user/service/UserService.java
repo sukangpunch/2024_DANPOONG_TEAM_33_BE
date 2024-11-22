@@ -129,12 +129,12 @@ public class UserService {
             throw new RuntimeException();
         }
 
-        String accessToken = jwtProvider.createJwt(user.getEmail(), user.getRole(), user.getName(),user.getId());
-        SignInResDto sign = SignInResDto.of(accessToken);
+        String accessToken = jwtProvider.createAccessToken(user.getEmail(), user.getRole(), user.getName(),user.getId());
+        String refreshToken = jwtProvider.createRefreshToken(user.getEmail(),user.getRole(),user.getName(),user.getId());
+        SignInResDto sign = SignInResDto.of(accessToken,refreshToken);
 
         return sign;
     }
-
 
     public UserInfoResDto updateUserInfo(String email, UpdateUserInfo updateUserInfo) {
         User user = userRepository.findByEmail(email).orElseThrow(()-> new RuntimeException());
